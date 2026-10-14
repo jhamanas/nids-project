@@ -1,0 +1,68 @@
+# Central configuration for the NIDS project.
+# Every script should read paths/params from here rather than hardcoding them,
+# so later phases stay consistent.
+
+paths:
+  data_raw: "data/raw"
+  cicids2017_dir: "data/raw/cicids2017"
+  nsl_kdd_dir: "data/raw/nsl-kdd"
+  data_processed: "data/processed"
+  models_dir: "models"
+  logs_dir: "logs"
+  notebooks_dir: "notebooks"
+
+# Services/ports to build separate "normal traffic" payload profiles for (Phase 2-4).
+# PAYL-style detection is per-service — a single global model performs poorly.
+services:
+  http: 80
+  https: 443
+  dns: 53
+  ftp: 21
+  ftp_data: 20
+  smtp: 25
+  telnet: 23
+
+# Payload feature extraction settings (Phase 3)
+features:
+  ngram_size: 3            # byte n-gram length (PAYL uses 1; Anagram-style uses 2-5)
+  ngram_buckets: 256        # hash n-grams into this many buckets (fixed-size feature vector,
+                            # since raw n-gram space (256^ngram_size) is intractable otherwise)
+  max_payload_bytes: 1500  # truncate/pad payloads to this length (typical MTU-bound)
+  length_bucket_size: 256  # PAYL segments profiles by payload length bucket
+
+# PAYL / Mahalanobis baseline (Phase 4)
+payl_baseline:
+  alert_percentile: 99     # flag payloads above this percentile of normal distance
+  covariance: "diagonal"   # "full" or "diagonal" — diagonal avoids singular-matrix issues
+  min_samples_per_profile: 10  # (service, length_bucket) groups with fewer samples than
+                                # this are marked "insufficient_data" rather than given an
+                                # unreliable profile built from too few examples
+  variance_epsilon: 1.0e-6     # added to every variance to avoid divide-by-zero on byte
+                                # positions that never vary in the training data (extremely
+                                # common -- most byte values never appear in text protocols)
+
+# Autoencoder detector (Phase 5)
+autoencoder:
+  hidden_dims: [64, 16, 64]
+  learning_rate: 0.001
+  epochs: 50
+  batch_size: 128
+  reconstruction_error_percentile: 99
+
+# Evaluation (Phase 6)
+evaluation:
+  test_split: 0.2
+  random_seed: 42
+  metrics: ["precision", "recall", "f1", "roc_auc", "fpr"]
+
+# Dataset attack-category labels of interest (CICIDS2017), for Phase 1 exploration
+# and later per-category breakdown in Phase 6.
+attack_categories:
+  - BENIGN
+  - DoS
+  - PortScan
+  - BruteForce
+  - WebAttack
+  - Infiltration
+  - Botnet
+  - DDoS
