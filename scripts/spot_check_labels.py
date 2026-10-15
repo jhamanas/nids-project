@@ -281,7 +281,10 @@ def build_label_keys(flows: pd.DataFrame, use_port: bool) -> tuple[dict, dict]:
             counts = key_label_counts.setdefault(pair, {})
             counts[label] = counts.get(label, 0) + 1
             continue
-        for port in (dport, sport):
+        ports = [dport]
+        if sport is not None and not pd.isna(sport) and sport < 1024:
+            ports.append(sport)
+        for port in ports:
             k = f"{pair}#{_port_str(port)}"
             counts = key_label_counts.setdefault(k, {})
             counts[label] = counts.get(label, 0) + 1
