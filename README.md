@@ -459,3 +459,14 @@ python scripts\spot_check_labels.py `
     --flow-csv data\raw\cicids2017\GeneratedLabelledFlows\TrafficLabelling\Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv `
     --top-n 50
 ```
+
+---
+
+## Phase 6 — Evaluation, Multi-Paradigm Benchmarks & Scope (C1-C5)
+
+### Dataset Scope Decision (Section C5)
+In accordance with **Task C5**, the primary payload-level inspection pipeline is scoped to **Monday (5.68M packets, Benign Training)** and **Friday (4.38M packets, Attack & Control Evaluation)**.
+- **Computational Boundary:** Ingesting and extracting all 5 days (52.4 GB raw PCAPs, ~27M packets) single-threaded requires ~16+ hours of Scapy parsing. Monday and Friday yield 10,057,595 packets, providing statistically overwhelming representation of normal traffic, DDoS floods, port scans, and botnets.
+- **Multi-Day Representation:** Tuesday through Thursday traffic (e.g. FTP/SSH Patator brute-force) is integrated through the **Flow-Based Random Forest Baseline** and the independent **NSL-KDD Benchmark**.
+- Detailed architectural analysis available in [`evaluation/dataset_scope_rationale.md`](evaluation/dataset_scope_rationale.md).
+
