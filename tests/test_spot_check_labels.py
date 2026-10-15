@@ -276,3 +276,46 @@ def test_build_label_keys_majority_vote_resolves_collision(tmp_path):
     assert label_keys[f"{pair}#80"] == "PortScan"
     assert ambiguity["attack_attack_ambiguities_count"] == 1
 
+
+def test_ephemeral_source_port_is_not_indexed(tmp_path):
+    """Ephemeral source port (>1024) must not become a key, but destination port must."""
+    csv_path = _write_flow_csv(tmp_path / "ephemeral.csv", [
+        {"Flow ID": "1", " Source IP": "172.16.0.1", " Source Port": 50001,
+         " Destination IP": "192.168.10.50", " Destination Port": 22, " Protocol": 6,
+         " Timestamp": "t", " Flow Duration": 1, " Label": "PortScan"},
+    ])
+    flows = sc.load_flow_csv(csv_path)
+    label_keys, _ = sc.build_label_keys(flows, use_port=True)
+    pair = sc._pair_key("172.16.0.1", "192.168.10.50")
+    assert f"{pair}#50001" not in label_keys
+    assert f"{pair}#22" in label_keys
+
+
+def test_reply_side_service_port_is_indexed(tmp_path):
+    """Source port below 1024 (e.g. server reply port 80) must be indexed as a key."""
+    csv_path = _write_flow_csv(tmp_path / "reply.csv", [
+        {"Flow ID": "1", " Source IP": "192.168.10.50", " Source Port": 80,
+         " Destination IP": "172.16.0.9", " Destination Port": 40000, " Protocol": 6,
+         " Timestamp": "t", " Flow Duration": 1, " Label": "DDoS"},
+    ])
+    flows = sc.load_flow_csv(csv_path)
+    label_keys, _ = sc.build_label_keys(flows, use_port=True)
+    pair = sc._pair_key("192.168.10.50", "172.16.0.9")
+    assert f"{pair}#80" in label_keys
+
+
+def test_collision_count_drops_when_ephemeral_ports_ignored(tmp_path):
+    """Two flows on different destinations sharing an ephemeral source port must not collide."""
+    csv_path = _write_flow_csv(tmp_path / "no_collision.csv", [
+        {"Flow ID": "1", " Source IP": "10.0.0.1", " Source Port": 54321,
+         " Destination IP": "10.0.0.2", " Destination Port": 80, " Protocol": 6,
+         " Timestamp": "t", " Flow Duration": 1, " Label": "PortScan"},
+        {"Flow ID": "2", " Source IP": "10.0.0.1", " Source Port": 54321,
+         " Destination IP": "10.0.0.3", " Destination Port": 443, " Protocol": 6,
+         " Timestamp": "t", " Flow Duration": 1, " Label": "DDoS"},
+    ])
+    flows = sc.load_flow_csv(csv_path)
+    _, ambiguity = sc.build_label_keys(flows, use_port=True)
+    assert ambiguity["ambiguous_keys_count"] == 0
+
+
