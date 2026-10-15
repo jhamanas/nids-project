@@ -408,5 +408,54 @@ python scripts\spot_check_labels.py `
     --top-n 50
 ```
 
+### Known Limitations & Threat Model Boundaries (A4, A5)
 
+1. **DNS Layer Extraction (A5):** Scapy dissects RFC 1035 DNS packets into dedicated protocol header attributes rather than an unparsed `Raw` byte layer. Because the payload extractor targets raw bytes, well-formed DNS traffic is largely transparent to the raw extractor (only malformed/unparsed frames survive, ~20 out of 5.68M packets). In production pipelines, an explicit layer-aware reassembler would decode application payloads across all protocol layers.
+2. **Service Classification Fallback (A4):** When `dst_port` is not in the known service map, the parser currently inspects `src_port` as a heuristic fallback. Consequently, port-scan probes originated with `src_port=80` scanning arbitrary destination ports can be heuristically labeled as "http". In strict anomaly detection pipelines, traffic should be categorized solely by destination service port, leaving non-standard destinations classified as `"other"`.
 
+---
+
+## Phase 5 — Deep Learning Autoencoder Detector
+
+`models/autoencoder.py` implements a deep neural network that compresses 258-dimensional payload vectors (256 byte-histogram bins + Shannon entropy + printable ratio) through a bottleneck latent space (16 dimensions) and measures anomaly level by **Reconstruction Error (Mean Squared Error)**.
+
+- **Architecture:** `Linear(258, 128) -> LayerNorm -> ReLU -> Linear(128, 64) -> LayerNorm -> ReLU -> Bottleneck(16)` and symmetric decoder.
+- **Training:** Trained on 5.68M benign Monday packets in streaming batches using PyTorch Adam optimizer.
+- **Threshold Calibration:** Anomaly threshold calibrated at the 99.0th percentile of normal reconstruction loss (`MSE = 0.000167`).
+
+### Comparative Detection Results: PAYL vs. Autoencoder (Friday Traffic)
+
+| Traffic Class | Total Packets | PAYL Flagged | **PAYL Recall** | Autoencoder Flagged | **Autoencoder Recall** |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **DDoS (forward flood)** | 95,814 | 20 | 0.02% | **95,750** | **99.93%** 🚀 |
+| **PortScan (probes)** | 19 | 0 | 0.00% | **19** | **100.00%** 🚀 |
+| **Botnet C&C** | 2,545 | 670 | **26.33%** | 143 | 5.62% |
+| **BENIGN (pure control)** | 1,801,194 | 34,210 | **1.90%** FPR | 34,109 | **1.89%** FPR |
+
+### Central Empirical Discovery:
+* **Resolving Flood Payload Blindness:** Where PAYL's diagonal Mahalanobis distance missed forward DDoS flood packets (0.02% recall) because their individual byte frequencies resembled normal HTTP text, the **Autoencoder achieved 99.93% recall**. By compressing features into a 16-dimensional bottleneck, the Autoencoder captures non-linear inter-byte correlations that deviate significantly from typical traffic manifolds.
+* **Stable False Positive Rate:** Both models maintain an identical false positive rate of **~1.9%** on unseen pure benign traffic, demonstrating that the Autoencoder's dramatic lift on DDoS detection was achieved without blowing up false alarms.
+
+### Run Autoencoder Pipeline:
+
+```powershell
+# 1. Train on Monday benign features
+python scripts\train_autoencoder.py `
+    --input data\processed\features_packet.parquet `
+    --output models\autoencoder.pt `
+    --epochs 2 --batch-size 2048 --percentile 99
+
+# 2. Score Friday features
+python scripts\score_autoencoder.py `
+    --model models\autoencoder.pt `
+    --input data\processed\features_packet_friday.parquet `
+    --output data\processed\scored_friday_autoencoder.parquet
+
+# 3. Evaluate recall & precision
+python scripts\spot_check_labels.py `
+    --scored-parquet data\processed\scored_friday_autoencoder.parquet `
+    --flow-csv data\raw\cicids2017\GeneratedLabelledFlows\TrafficLabelling\Friday-WorkingHours-Morning.pcap_ISCX.csv `
+    --flow-csv data\raw\cicids2017\GeneratedLabelledFlows\TrafficLabelling\Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv `
+    --flow-csv data\raw\cicids2017\GeneratedLabelledFlows\TrafficLabelling\Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv `
+    --top-n 50
+```
