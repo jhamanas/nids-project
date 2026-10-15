@@ -469,4 +469,42 @@ In accordance with **Task C5**, the primary payload-level inspection pipeline is
 - **Computational Boundary:** Ingesting and extracting all 5 days (52.4 GB raw PCAPs, ~27M packets) single-threaded requires ~16+ hours of Scapy parsing. Monday and Friday yield 10,057,595 packets, providing statistically overwhelming representation of normal traffic, DDoS floods, port scans, and botnets.
 - **Multi-Day Representation:** Tuesday through Thursday traffic (e.g. FTP/SSH Patator brute-force) is integrated through the **Flow-Based Random Forest Baseline** and the independent **NSL-KDD Benchmark**.
 - Detailed architectural analysis available in [`evaluation/dataset_scope_rationale.md`](evaluation/dataset_scope_rationale.md).
+- Comprehensive Phase 6 benchmark report available in [`evaluation/comprehensive_evaluation_report.md`](evaluation/comprehensive_evaluation_report.md).
+
+---
+
+## Phase 7 — Adversarial Evasion & Mimicry Attacks
+
+Phase 7 evaluates detector robustness under active evasion techniques:
+1. **Payload Padding (D1):** Blending malicious payloads with benign HTTP keywords.
+2. **Fragmentation (D2):** Splitting exploits across 16B, 32B, 64B MTU segments.
+3. **Low-Rate Throttling (D3):** Throttling volumetric flood rates to evade flow thresholding.
+
+### Run Evasion Benchmark:
+```powershell
+python evaluation\eval_evasion_mimicry.py
+```
+Report: [`evaluation/evasion_benchmark_report.md`](evaluation/evasion_benchmark_report.md)
+
+---
+
+## Phase 8 — Packaging, Master Pipeline & Live Demo
+
+### 1. Master Pipeline (One Command End-to-End)
+Runs PCAP parsing, feature engineering, and dual-model anomaly scoring end-to-end:
+```powershell
+python scripts\run_pipeline.py --pcap tests\fixtures\sample.pcap --output-dir data\processed\sample_run
+```
+
+### 2. Interactive Terminal PCAP Scoring Demo
+Inspects packet streams in real-time, displays PAYL distances vs. Autoencoder reconstruction errors, and renders payload hex and ASCII previews:
+```powershell
+python scripts\demo_score_pcap.py --pcap tests\fixtures\sample.pcap --show-all
+```
+
+### 3. Full Test Suite (77 Automated Tests)
+```powershell
+python -m pytest tests/ -v
+```
+
 
