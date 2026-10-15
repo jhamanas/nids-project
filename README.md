@@ -377,22 +377,19 @@ CICIDS2017's labeled flows (`GeneratedLabelledFlows`).
 
 ### Empirical Results (Friday Attack Traffic — ~4.4M Scored Packets)
 
-| Label | Scored Rows | Flagged Rows | Flagged Rate | vs. Control Baseline |
-|---|---|---|---|---|
-| **PortScan** | 55,830 | 55,692 | **99.75%** | **64.7× higher** |
-| **DDoS** | 286,601 | 190,801 | **66.57%** | **43.2× higher** |
-| **Bot** | 2,584 | 678 | **26.24%** | **17.0× higher** |
-| **BENIGN (control)** | 4,033,299 | 62,150 | **1.54%** | Baseline reference |
+With ephemeral source ports (>1024) filtered out to prevent cross-label collisions:
+
+| Label | Scored Rows | Flagged Rows | Flagged Rate | Best Score | Best Rank | Best Pct |
+|---|---|---|---|---|---|---|
+| **PortScan** | 728 | 709 | **97.39%** | 57.824 | 15,775 | 0.36% |
+| **Bot** | 2,313 | 574 | **24.82%** | 206.660 | 140 | 0.003% |
+| **DDoS** | 95,814 | 20 | **0.02%** | 57.735 | 16,704 | 0.38% |
+| **BENIGN (control)** | 1,949,944 | 182,715 | **9.37%** | 354.418 | 13 | 0.0003% |
 
 **Key Takeaways:**
-1. **Strong Statistical Separation:** The model flags PortScan at 99.75% and
-   DDoS at 66.57% while flagging unseen Friday benign traffic at only 1.54%
-   (consistent with the 99th-percentile training calibration).
-2. **Ranking Characteristics:** Systematic attacks produce consistent,
-   moderately high anomaly scores (above the threshold), while the highest
-   individual scores (>200) belong to rare benign structural outliers
-   (unusual headers, rare protocols), providing motivation for Phase 5's
-   deep learning autoencoder.
+1. **Collision Reduction:** Attack-vs-Attack collisions dropped from **11,241 down to 1**, and ambiguous keys dropped from **26,037 to 183**.
+2. **PortScan & Bot Detection:** PortScan remains strongly flagged at **97.39%**, and Bot traffic reaches the top 0.003% rank (`206.66`, rank 140).
+3. **DDoS Directionality Insight:** Once ephemeral ports are removed, DDoS packet matching isolates to true server-bound traffic where PAYL evaluates the request payloads against normal Monday HTTP profiles (most DDoS flood packets that share standard HTTP structures receive low payload divergence, pinpointing payload vs. volume-based detection boundaries).
 
 ### Try it:
 
@@ -404,4 +401,5 @@ python scripts\spot_check_labels.py `
     --flow-csv data\raw\cicids2017\GeneratedLabelledFlows\TrafficLabelling\Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv `
     --top-n 50
 ```
+
 
