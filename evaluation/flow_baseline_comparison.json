@@ -1,0 +1,81 @@
+{
+  "model": "FlowRandomForestBaseline",
+  "training_time_sec": 3.67,
+  "top_features": [
+    [
+      "Avg Fwd Segment Size",
+      0.07907234033861955
+    ],
+    [
+      "Init_Win_bytes_forward",
+      0.07024186908195044
+    ],
+    [
+      "Fwd Packet Length Max",
+      0.06786844773728025
+    ],
+    [
+      "Subflow Fwd Bytes",
+      0.06519433834071647
+    ],
+    [
+      "Fwd Packet Length Mean",
+      0.06311027071060488
+    ],
+    [
+      "Total Length of Fwd Packets",
+      0.04643304421127377
+    ],
+    [
+      "Bwd Packet Length Min",
+      0.03548131925273099
+    ],
+    [
+      "Average Packet Size",
+      0.034798184702928406
+    ],
+    [
+      "PSH Flag Count",
+      0.03451126888064533
+    ],
+    [
+      "Init_Win_bytes_backward",
+      0.027584265146358547
+    ]
+  ],
+  "metrics": {
+    "total_samples": 150000,
+    "true_positives": 74841,
+    "false_positives": 64,
+    "true_negatives": 74936,
+    "false_negatives": 159,
+    "precision": 0.9991455844069155,
+    "recall": 0.99788,
+    "f1_score": 0.9985123911810814,
+    "false_positive_rate": 0.0008533333333333333,
+    "roc_auc": 0.999964172977778,
+    "pr_auc": 0.9999777367621203
+  },
+  "per_class": {
+    "DDoS": {
+      "total_flows": 33361,
+      "flagged_flows": 33345,
+      "recall": 0.9995203980696022
+    },
+    "PortScan": {
+      "total_flows": 41117,
+      "flagged_flows": 41110,
+      "recall": 0.9998297541163023
+    },
+    "BENIGN": {
+      "total_flows": 75000,
+      "flagged_flows": 64,
+      "recall": 0.0008533333333333333
+    },
+    "Bot": {
+      "total_flows": 522,
+      "flagged_flows": 386,
+      "recall": 0.7394636015325671
+    }
+  }
+}
