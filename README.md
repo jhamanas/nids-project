@@ -358,3 +358,50 @@ correct top-10 report — the same combination that previously failed with an
 
 Both scripts also gained `--batch-size` (default 200,000) if you ever need
 to tune it further for a particularly memory-constrained machine.
+
+---
+
+## Phase 4.5 — Heuristic Spot-Check & Empirical Results
+
+`scripts/spot_check_labels.py` evaluates the trained PAYL baseline against
+CICIDS2017's labeled flows (`GeneratedLabelledFlows`).
+
+### Methodology
+- **Key Disambiguation via Majority Vote:** Maps each `(host_pair, port)` key to
+  a single winning label using flow counts (`max(flow_count)`), eliminating
+  double-counting across colliding attack/benign traffic.
+- **BENIGN Control Baseline:** Evaluates benign-only host pairs using identical
+  key logic to measure baseline false-alarm rates.
+- **Top-N Precision:** Examines the highest-scoring anomalies to inspect payload
+  characteristics and identify attack vs. benign outlier traffic.
+
+### Empirical Results (Friday Attack Traffic — ~4.4M Scored Packets)
+
+| Label | Scored Rows | Flagged Rows | Flagged Rate | vs. Control Baseline |
+|---|---|---|---|---|
+| **PortScan** | 55,830 | 55,692 | **99.75%** | **64.7× higher** |
+| **DDoS** | 286,601 | 190,801 | **66.57%** | **43.2× higher** |
+| **Bot** | 2,584 | 678 | **26.24%** | **17.0× higher** |
+| **BENIGN (control)** | 4,033,299 | 62,150 | **1.54%** | Baseline reference |
+
+**Key Takeaways:**
+1. **Strong Statistical Separation:** The model flags PortScan at 99.75% and
+   DDoS at 66.57% while flagging unseen Friday benign traffic at only 1.54%
+   (consistent with the 99th-percentile training calibration).
+2. **Ranking Characteristics:** Systematic attacks produce consistent,
+   moderately high anomaly scores (above the threshold), while the highest
+   individual scores (>200) belong to rare benign structural outliers
+   (unusual headers, rare protocols), providing motivation for Phase 5's
+   deep learning autoencoder.
+
+### Try it:
+
+```powershell
+python scripts\spot_check_labels.py `
+    --scored-parquet data\processed\scored_friday.parquet `
+    --flow-csv data\raw\cicids2017\GeneratedLabelledFlows\TrafficLabelling\Friday-WorkingHours-Morning.pcap_ISCX.csv `
+    --flow-csv data\raw\cicids2017\GeneratedLabelledFlows\TrafficLabelling\Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv `
+    --flow-csv data\raw\cicids2017\GeneratedLabelledFlows\TrafficLabelling\Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv `
+    --top-n 50
+```
+
