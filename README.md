@@ -377,19 +377,25 @@ CICIDS2017's labeled flows (`GeneratedLabelledFlows`).
 
 ### Empirical Results (Friday Attack Traffic — ~4.4M Scored Packets)
 
-With ephemeral source ports (>1024) filtered out to prevent cross-label collisions:
+With directional attack keys (`src->dst#port`), victim reply stream isolation, and pure benign control host pairs:
 
 | Label | Scored Rows | Flagged Rows | Flagged Rate | Best Score | Best Rank | Best Pct |
 |---|---|---|---|---|---|---|
-| **PortScan** | 728 | 709 | **97.39%** | 57.824 | 15,775 | 0.36% |
-| **Bot** | 2,313 | 574 | **24.82%** | 206.660 | 140 | 0.003% |
-| **DDoS** | 95,814 | 20 | **0.02%** | 57.735 | 16,704 | 0.38% |
-| **BENIGN (control)** | 1,949,944 | 182,715 | **9.37%** | 354.418 | 13 | 0.0003% |
+| **Bot** | 2,545 | 670 | **26.33%** | 206.660 | 140 | 0.003% |
+| **DDoS (forward flood)** | 95,814 | 20 | **0.02%** | 57.735 | 16,704 | 0.38% |
+| **PortScan (probes)** | 19 | 0 | **0.00%** | 26.143 | 422,911 | 9.66% |
+| **Victim Reply (to attacker)** | 2 | 2 | **100.00%** | 29.164 | 407,629 | 9.31% |
+| **BENIGN (pure control)** | 1,801,194 | 34,210 | **1.90%** | 354.418 | 13 | 0.0003% |
 
-**Key Takeaways:**
-1. **Collision Reduction:** Attack-vs-Attack collisions dropped from **11,241 down to 1**, and ambiguous keys dropped from **26,037 to 183**.
-2. **PortScan & Bot Detection:** PortScan remains strongly flagged at **97.39%**, and Bot traffic reaches the top 0.003% rank (`206.66`, rank 140).
-3. **DDoS Directionality Insight:** Once ephemeral ports are removed, DDoS packet matching isolates to true server-bound traffic where PAYL evaluates the request payloads against normal Monday HTTP profiles (most DDoS flood packets that share standard HTTP structures receive low payload divergence, pinpointing payload vs. volume-based detection boundaries).
+**Key Findings:**
+1. **Benign Baseline Calibration Confirmed (1.00% on Monday, 1.90% on Friday):**
+   - Running the PAYL baseline over Monday's full benign dataset (5.68M packets) produces **56,626 flagged rows (exactly 1.00%)**, matching the 99th-percentile calibration.
+   - On Friday's pure benign host pairs (1.80M packets), the false-positive rate is **1.90%**, confirming that baseline noise remains low across days.
+2. **Directional Separation of Flood vs. Replies:**
+   - The earlier ~66% DDoS flag rate was an artifact of undirected pairing that matched large victim-to-attacker reply streams.
+   - Forward DDoS flood packets (`172.16.0.1 -> 192.168.10.50:80`) consist of small, repeated ~20-byte payloads whose byte frequencies mimic standard HTTP requests, causing PAYL to miss them at the payload level (0.02% flagged). This illustrates a foundational limitation of payload-only statistical profiles against volumetric floods and provides direct motivation for **Phase 5 (Autoencoder)** and flow-level detection.
+3. **Botnet C&C Detection:**
+   - Bot traffic (`192.168.10.x <-> 205.174.165.73:8080`) is reliably flagged at **26.33%** and generates the highest-ranked attack anomalies in the file (`206.66`, ranking 140th in the whole dataset).
 
 ### Try it:
 
@@ -401,5 +407,6 @@ python scripts\spot_check_labels.py `
     --flow-csv data\raw\cicids2017\GeneratedLabelledFlows\TrafficLabelling\Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv `
     --top-n 50
 ```
+
 
 

@@ -265,41 +265,86 @@ def _pair_keys(src: pd.Series, dst: pd.Series) -> pd.Series:
 
 
 def build_label_keys(flows: pd.DataFrame, use_port: bool) -> tuple[dict, dict]:
-    """Map key -> single winning label (via majority vote of flow counts),
-    and return (label_keys, ambiguity_info).
+    """Map directional keys for attacks, reply keys for victim responses,
+    and undirected keys for pure benign traffic.
+
+    - Attack forward key: 'src->dst#port' (attacker to victim).
+    - Attack reply key: 'src->dst#reply' (victim to attacker, only for host pairs with asymmetric attacks).
+    - BENIGN control key: 'src|dst#port' (strictly on host pairs that never experienced attacks).
 
     Returns:
         label_keys: dict mapping key -> winning_label
         ambiguity_info: dict with stats on collisions/ambiguities
     """
+    attack_flows = flows[flows["Label"] != BENIGN]
+    benign_flows = flows[flows["Label"] == BENIGN]
+
+    # 1. Identify all host pairs involved in attack flows (in either direction)
+    attack_pairs = set()
+    for src, dst in attack_flows[["Source IP", "Destination IP"]].itertuples(index=False):
+        attack_pairs.add((str(src).strip(), str(dst).strip()))
+
+    # Pairs with distinct directional attacks (e.g. 172.16.0.1 -> 192.168.10.50)
+    reply_target_pairs = set()
+    for src, dst in attack_pairs:
+        # If (src, dst) has an attack, but (dst, src) does not generate attack flows,
+        # then dst -> src is purely a victim reply stream!
+        if (dst, src) not in attack_pairs:
+            reply_target_pairs.add((dst, src))
+
     key_label_counts = {}
-    for src, dst, sport, dport, label in flows[
+
+    # 2. Forward attack keys (directional: src -> dst # dport)
+    for src, dst, sport, dport, label in attack_flows[
         ["Source IP", "Destination IP", "Source Port", "Destination Port", "Label"]
     ].itertuples(index=False):
-        pair = _pair_key(src, dst)
+        s, d = str(src).strip(), str(dst).strip()
         if not use_port:
-            counts = key_label_counts.setdefault(pair, {})
+            k = f"{s}->{d}"
+            counts = key_label_counts.setdefault(k, {})
             counts[label] = counts.get(label, 0) + 1
             continue
+
+        ports = [dport]
+        if sport is not None and not pd.isna(sport) and sport < 1024:
+            ports.append(sport)
+        for port in ports:
+            k = f"{s}->{d}#{_port_str(port)}"
+            counts = key_label_counts.setdefault(k, {})
+            counts[label] = counts.get(label, 0) + 1
+
+    # 3. Benign control keys (strictly on host pairs untouched by attacks)
+    for src, dst, sport, dport in benign_flows[
+        ["Source IP", "Destination IP", "Source Port", "Destination Port"]
+    ].itertuples(index=False):
+        s, d = str(src).strip(), str(dst).strip()
+        if (s, d) in attack_pairs or (d, s) in attack_pairs:
+            continue  # Exclude attack host pairs to keep control strictly unpolluted
+
+        pair = _pair_key(s, d)
+        if not use_port:
+            counts = key_label_counts.setdefault(pair, {})
+            counts[BENIGN] = counts.get(BENIGN, 0) + 1
+            continue
+
         ports = [dport]
         if sport is not None and not pd.isna(sport) and sport < 1024:
             ports.append(sport)
         for port in ports:
             k = f"{pair}#{_port_str(port)}"
             counts = key_label_counts.setdefault(k, {})
-            counts[label] = counts.get(label, 0) + 1
+            counts[BENIGN] = counts.get(BENIGN, 0) + 1
 
     label_keys = {}
     ambiguous_keys = {}
     for key, counts in key_label_counts.items():
-        # Pick label with max flow count. Tie-breaker: prefer non-BENIGN, then alphabetical.
         sorted_counts = sorted(counts.items(), key=lambda x: (x[1], x[0] != BENIGN, x[0]), reverse=True)
         winner = sorted_counts[0][0]
         label_keys[key] = winner
         if len(counts) > 1:
             ambiguous_keys[key] = counts
 
-    # Check how many attack-to-attack ambiguities exist
+    # Check attack-vs-attack ambiguities
     attack_attack_ambiguities = {}
     for key, counts in ambiguous_keys.items():
         attack_labels = [l for l in counts.keys() if l != BENIGN]
@@ -312,6 +357,7 @@ def build_label_keys(flows: pd.DataFrame, use_port: bool) -> tuple[dict, dict]:
         "attack_attack_ambiguities_count": len(attack_attack_ambiguities),
         "ambiguous_details": ambiguous_keys,
         "attack_attack_details": attack_attack_ambiguities,
+        "reply_target_pairs": reply_target_pairs,
     }
     return label_keys, ambiguity_info
 
@@ -327,7 +373,7 @@ RECALL_COLUMNS = ["label", "keys_in_scored", "matching_rows", "flagged_rows",
 
 
 def recall_report(scored_path: Path, flows: pd.DataFrame, batch_size: int = 200_000) -> tuple[pd.DataFrame, dict]:
-    """One row per label (including BENIGN control baseline).
+    """One row per label, plus attack replies and BENIGN control baseline.
     Two streaming passes over the scored file.
     Returns (report_df, ambiguity_info).
     """
@@ -337,6 +383,7 @@ def recall_report(scored_path: Path, flows: pd.DataFrame, batch_size: int = 200_
     flag_col = next((c for c in FLAG_CANDIDATES if c in schema), None)
 
     label_keys, ambiguity_info = build_label_keys(flows, use_port)
+    reply_target_pairs = ambiguity_info.get("reply_target_pairs", set())
     attack_labels = {l for l in flows["Label"].unique() if l != BENIGN}
     if not attack_labels:
         return pd.DataFrame(columns=RECALL_COLUMNS), ambiguity_info
@@ -349,17 +396,48 @@ def recall_report(scored_path: Path, flows: pd.DataFrame, batch_size: int = 200_
 
     # Pass 1: per-key aggregates for all recognized keys
     key_stats = {}  # key -> {"rows", "flagged", "best"}
+    reply_stats = {"keys": len(reply_target_pairs), "rows": 0, "flagged": 0, "best": float("-inf")}
     total_rows = 0
+
     for batch in pf.iter_batches(batch_size=batch_size, columns=cols):
         df = batch.to_pandas()
         total_rows += len(df)
-        keys = _pair_keys(df["src_ip"], df["dst_ip"])
+        srcs = df["src_ip"].astype(str).str.strip()
+        dsts = df["dst_ip"].astype(str).str.strip()
+
+        # Check for victim-to-attacker reply rows
+        if reply_target_pairs:
+            reply_mask = pd.Series([False] * len(df), index=df.index)
+            for v_ip, a_ip in reply_target_pairs:
+                reply_mask |= ((srcs == v_ip) & (dsts == a_ip))
+            if reply_mask.any():
+                sub_r = df[reply_mask]
+                reply_stats["rows"] += len(sub_r)
+                if flag_col:
+                    reply_stats["flagged"] += int(sub_r[flag_col].sum())
+                reply_stats["best"] = max(reply_stats["best"], float(sub_r["payl_score"].max()))
+
+        # Directional forward attack key: src->dst#port
+        dir_keys = srcs + "->" + dsts
         if use_port:
-            keys = keys + "#" + df["dst_port"].map(_port_str)
-        mask = keys.isin(label_keys.keys())
+            dir_keys = dir_keys + "#" + df["dst_port"].map(_port_str)
+
+        # Undirected benign key: pair#port
+        undir_keys = _pair_keys(srcs, dsts)
+        if use_port:
+            undir_keys = undir_keys + "#" + df["dst_port"].map(_port_str)
+
+        m_dir = dir_keys.isin(label_keys.keys())
+        m_undir = undir_keys.isin(label_keys.keys()) & (~m_dir)
+        mask = m_dir | m_undir
         if not mask.any():
             continue
-        sub = df[mask].assign(__key=keys[mask].values)
+
+        assigned_keys = pd.Series(index=df.index, dtype=str)
+        assigned_keys[m_dir] = dir_keys[m_dir]
+        assigned_keys[m_undir] = undir_keys[m_undir]
+
+        sub = df[mask].assign(__key=assigned_keys[mask].values)
         agg = {"rows": ("payl_score", "size"), "best": ("payl_score", "max")}
         if flag_col:
             agg["flagged"] = (flag_col, "sum")
@@ -369,7 +447,7 @@ def recall_report(scored_path: Path, flows: pd.DataFrame, batch_size: int = 200_
             s["flagged"] += int(row["flagged"]) if flag_col else 0
             s["best"] = max(s["best"], float(row["best"]))
 
-    # Roll key stats up to each single assigned label (no double-counting)
+    # Roll key stats up to each single assigned label
     label_stats = {}
     for key, s in key_stats.items():
         label = label_keys[key]
@@ -378,6 +456,9 @@ def recall_report(scored_path: Path, flows: pd.DataFrame, batch_size: int = 200_
         ls["rows"] += s["rows"]
         ls["flagged"] += s["flagged"]
         ls["best"] = max(ls["best"], s["best"])
+
+    if reply_stats["rows"] > 0:
+        label_stats["Victim Reply (to attacker)"] = reply_stats
 
     # If no attack labels had any matching rows, return empty report
     if not any(l != BENIGN for l in label_stats):
@@ -391,8 +472,15 @@ def recall_report(scored_path: Path, flows: pd.DataFrame, batch_size: int = 200_
             greater[label] += int((scores > ls["best"]).sum())
 
     out = []
-    # Sort with BENIGN (control) first or last, attacks sorted
-    sorted_labels = sorted(label_stats.keys(), key=lambda x: (x == BENIGN, x))
+    # Sort order: attacks sorted, replies, then BENIGN (control)
+    def _sort_key(name):
+        if name == BENIGN:
+            return (2, name)
+        if "Reply" in name:
+            return (1, name)
+        return (0, name)
+
+    sorted_labels = sorted(label_stats.keys(), key=_sort_key)
     for label in sorted_labels:
         ls = label_stats[label]
         best_rank = greater[label] + 1

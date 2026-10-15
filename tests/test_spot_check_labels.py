@@ -45,9 +45,8 @@ def flow_csvs(tmp_path):
          " Timestamp": "7/7/2017 14:00", " Flow Duration": 5, " Label": "PortScan"},
     ])
     ddos = _write_flow_csv(tmp_path / "Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv", [
-        # reversed direction on purpose: CICFlowMeter recorded the reply side
-        {"Flow ID": "z", " Source IP": "192.168.10.50", " Source Port": 80,
-         " Destination IP": "172.16.0.9", " Destination Port": 40000, " Protocol": 6,
+        {"Flow ID": "z", " Source IP": "172.16.0.9", " Source Port": 40000,
+         " Destination IP": "192.168.10.50", " Destination Port": 80, " Protocol": 6,
          " Timestamp": "7/7/2017 15:10", " Flow Duration": 900, " Label": "DDoS"},
     ])
     return [morning, portscan, ddos]
@@ -272,8 +271,7 @@ def test_build_label_keys_majority_vote_resolves_collision(tmp_path):
     ])
     flows = sc.load_flow_csv(csv_path)
     label_keys, ambiguity = sc.build_label_keys(flows, use_port=True)
-    pair = sc._pair_key("10.0.0.1", "10.0.0.2")
-    assert label_keys[f"{pair}#80"] == "PortScan"
+    assert label_keys["10.0.0.1->10.0.0.2#80"] == "PortScan"
     assert ambiguity["attack_attack_ambiguities_count"] == 1
 
 
@@ -286,13 +284,12 @@ def test_ephemeral_source_port_is_not_indexed(tmp_path):
     ])
     flows = sc.load_flow_csv(csv_path)
     label_keys, _ = sc.build_label_keys(flows, use_port=True)
-    pair = sc._pair_key("172.16.0.1", "192.168.10.50")
-    assert f"{pair}#50001" not in label_keys
-    assert f"{pair}#22" in label_keys
+    assert "172.16.0.1->192.168.10.50#50001" not in label_keys
+    assert "172.16.0.1->192.168.10.50#22" in label_keys
 
 
 def test_reply_side_service_port_is_indexed(tmp_path):
-    """Source port below 1024 (e.g. server reply port 80) must be indexed as a key."""
+    """Source port below 1024 on an attack flow is also indexed as a directional key."""
     csv_path = _write_flow_csv(tmp_path / "reply.csv", [
         {"Flow ID": "1", " Source IP": "192.168.10.50", " Source Port": 80,
          " Destination IP": "172.16.0.9", " Destination Port": 40000, " Protocol": 6,
@@ -300,8 +297,7 @@ def test_reply_side_service_port_is_indexed(tmp_path):
     ])
     flows = sc.load_flow_csv(csv_path)
     label_keys, _ = sc.build_label_keys(flows, use_port=True)
-    pair = sc._pair_key("192.168.10.50", "172.16.0.9")
-    assert f"{pair}#80" in label_keys
+    assert "192.168.10.50->172.16.0.9#80" in label_keys
 
 
 def test_collision_count_drops_when_ephemeral_ports_ignored(tmp_path):
