@@ -1,0 +1,70 @@
+{
+  "dataset": "NSL-KDD (KDDTest+.txt)",
+  "train_samples": 125973,
+  "test_samples": 22544,
+  "models": {
+    "flow_random_forest": {
+      "total_samples": 22544,
+      "true_positives": 7896,
+      "false_positives": 259,
+      "true_negatives": 9452,
+      "false_negatives": 4937,
+      "precision": 0.9682403433476395,
+      "recall": 0.6152887087976311,
+      "f1_score": 0.7524299599771298,
+      "false_positive_rate": 0.026670785706930284,
+      "roc_auc": 0.9672877292216177,
+      "pr_auc": 0.9713494650471374
+    },
+    "tabular_autoencoder": {
+      "total_samples": 22544,
+      "true_positives": 7174,
+      "false_positives": 163,
+      "true_negatives": 9548,
+      "false_negatives": 5659,
+      "precision": 0.9777838353550498,
+      "recall": 0.5590275072079794,
+      "f1_score": 0.7113534952900347,
+      "false_positive_rate": 0.0167850890742457,
+      "roc_auc": 0.9569279160651742,
+      "pr_auc": 0.9436762621998797
+    }
+  },
+  "per_category": {
+    "DoS": {
+      "total": 7460,
+      "rf_flagged": 6073,
+      "rf_recall": 0.8140750670241287,
+      "ae_flagged": 5038,
+      "ae_recall": 0.6753351206434316
+    },
+    "Normal": {
+      "total": 9711,
+      "rf_flagged": 259,
+      "rf_recall": 0.026670785706930284,
+      "ae_flagged": 163,
+      "ae_recall": 0.0167850890742457
+    },
+    "Probe": {
+      "total": 2421,
+      "rf_flagged": 1741,
+      "rf_recall": 0.7191243287897563,
+      "ae_flagged": 1463,
+      "ae_recall": 0.6042957455596861
+    },
+    "R2L": {
+      "total": 2885,
+      "rf_flagged": 78,
+      "rf_recall": 0.02703639514731369,
+      "ae_flagged": 631,
+      "ae_recall": 0.21871750433275564
+    },
+    "U2R": {
+      "total": 67,
+      "rf_flagged": 4,
+      "rf_recall": 0.05970149253731343,
+      "ae_flagged": 42,
+      "ae_recall": 0.6268656716417911
+    }
+  }
+}
