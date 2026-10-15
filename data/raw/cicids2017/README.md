@@ -1,78 +1,63 @@
-# CICIDS2017 — Download Instructions
+# CICIDS2017 raw data
 
-Unlike NSL-KDD, CICIDS2017 is **not freely scriptable** — the Canadian Institute
-for Cybersecurity (CIC) requires you to fill in a short access form before you
-get a download link, and the host does not allow bulk/automated retrieval. This
-has to be done manually, once, in a browser.
+This folder holds the raw CICIDS2017 dataset. Nothing here is committed to git
+(see `.gitignore`); each person downloads it locally.
 
-## Steps
+Dataset page: https://www.unb.ca/cic/datasets/ids-2017.html
+(The direct download links below sit behind the Canadian Institute for
+Cybersecurity's download page. Registration may be required.)
 
-1. Go to the official dataset page: https://www.unb.ca/cic/datasets/ids-2017.html
-2. Click through to the **download request form** (CIC gates the dataset behind
-   a short form — name, email, institution/purpose). Submit it.
-3. You'll be given access to an FTP/HTTP directory containing:
-   - `MachineLearningCSV.zip` — pre-extracted flow-based CSVs (one CSV per day/attack scenario, ~225 MB zipped). **This is the minimum you need for Phase 1 exploration.**
-   - `GeneratedLabelledFlows.zip` — same data, alternate packaging
-   - `PCAPs/` — the raw packet captures (**required for Phase 2**, payload-level
-     feature extraction — this is the whole point of the project, so don't skip
-     it, but it is large: tens of GB across all days)
-4. Download `MachineLearningCSV.zip` first (fast, gets you unblocked for Phase 1),
-   then start the PCAP download in the background — it can take a while depending
-   on your connection.
+## What you need
 
-## Where to put the files
+| Item | Used for | Expected location |
+|---|---|---|
+| PCAP files (Monday–Friday, `*.pcap`) | Phase 2–3: payload extraction | `data/raw/cicids2017/PCAPs/` |
+| `GeneratedLabelledFlows.zip` | Phase 6 / spot-check: flow labels with IP, port, timestamp, Label | `data/raw/cicids2017/GeneratedLabelledFlows/` |
+| `MachineLearningCSV.zip` | Flow-feature baseline only (no IP/port/timestamp) | `data/raw/cicids2017/MachineLearningCSV/` |
 
-Unzip everything into `data/raw/cicids2017/` so it looks like this:
+## Which flow-CSV variant to use
 
-```
-data/raw/cicids2017/
-├── Monday-WorkingHours.pcap_ISCX.csv
-├── Tuesday-WorkingHours.pcap_ISCX.csv
-├── Wednesday-workingHours.pcap_ISCX.csv
-├── Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv
-├── Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv
-├── Friday-WorkingHours-Morning.pcap_ISCX.csv
-├── Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv
-├── Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv
-└── PCAPs/
-    ├── Monday-WorkingHours.pcap
-    ├── Tuesday-WorkingHours.pcap
-    └── ... (one per day)
-```
+CICIDS2017 ships two CSV variants. They are NOT interchangeable:
 
-(Exact filenames vary slightly by mirror/zip — what matters is one CSV per
-day/scenario, plus a `PCAPs/` subfolder if you downloaded the raw captures.)
+- **`GeneratedLabelledFlows.zip` (85 columns)** keeps `Flow ID`, `Source IP`,
+  `Source Port`, `Destination IP`, `Destination Port`, `Protocol`, `Timestamp`
+  and `Label`. Use this one for anything that needs to match flows to packets
+  or payloads.
+- **`MachineLearningCSV.zip` (79 columns)** strips the identifying columns on
+  purpose, to stop models learning IP addresses. It only has `Destination Port`
+  and `Label` as identifiers, so it cannot be used to verify a specific
+  anomaly.
 
-## What each day contains (for Phase 1 exploration)
+Column names in these CSVs carry a leading space (`" Source IP"`, `" Label"`).
+`spot_check_labels.py` strips this on load.
 
-| Day | Traffic |
-|---|---|
-| Monday | Benign only (baseline "normal" traffic) |
-| Tuesday | Benign + Brute Force (FTP-Patator, SSH-Patator) |
-| Wednesday | Benign + DoS/DDoS (Hulk, GoldenEye, Slowloris, Slowhttptest, Heartbleed) |
-| Thursday (morning) | Benign + Web Attacks (Brute Force, XSS, SQL Injection) |
-| Thursday (afternoon) | Benign + Infiltration |
-| Friday (morning) | Benign only |
-| Friday (afternoon) | Benign + PortScan + Botnet + DDoS |
+## Files used by the spot-check (Friday)
 
-This is why **Monday has no attacks** — it exists purely to build your "normal
-traffic" profile, which matters a lot for the PAYL baseline in Phase 4.
+Under `GeneratedLabelledFlows/TrafficLabelling/`:
 
-## Verifying your download
+- `Friday-WorkingHours-Morning.pcap_ISCX.csv`
+- `Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv`
+- `Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv` (note the casing: `DDos`)
 
-Once files are in place, run:
+## Verifying the download
 
-```bash
-python scripts/verify_cicids2017.py
+```powershell
+python scripts\verify_cicids2017.py
 ```
 
-This checks that the expected CSVs are present and readable, and prints row
-counts + label distribution per file, without needing you to open each one
-manually.
+To check that a flow CSV has the columns the spot-check needs:
 
-## A note on disk space
+```powershell
+python -c "import pandas as pd; df = pd.read_csv(r'data\raw\cicids2017\GeneratedLabelledFlows\TrafficLabelling\Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv', nrows=5); print([c for c in df.columns])"
+```
 
-Full CSVs: ~1.5 GB combined. Full PCAPs: ~50+ GB combined. If you're tight on
-space, you can do Phase 1 exploration with just the CSVs and only pull the PCAP
-for one or two days to develop the Phase 2 parsing code against, before
-committing to downloading all of them.
+## Notes
+
+- Run each `Start-BitsTransfer` command on its own line. Pasting two commands
+  with no newline between them makes PowerShell concatenate them into one
+  invocation, which fails with a `ParameterBindingException`.
+- BITS downloads of this dataset ended in `JobState: Error` on at least one
+  machine. The manual browser download worked. Check
+  `Get-BitsTransfer | Format-List JobId, DisplayName, JobState, ErrorDescription`
+  if you want to diagnose it.
+- Verify each zip against its `.md5` file before extracting.
