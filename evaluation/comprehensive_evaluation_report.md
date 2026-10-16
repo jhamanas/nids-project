@@ -31,7 +31,7 @@ Earlier evaluations suffered from an asymmetric directionality artifact: bidirec
 In high-volume network captures, the highest absolute anomaly scores often correspond to rare, legitimate large binary transfers (e.g. software updates or TLS handshakes). Consequently, top-N rankings are not sound security metrics. All conclusions in this benchmark are drawn strictly from threshold-calibrated binary classification rates (Precision, Recall, F1, ROC-AUC, and PR-AUC).
 
 ### D. Architectural Limitations (A4 & A5)
-- **Service Fallback (A4):** Source port heuristics are disabled to prevent back-scatter probes from being mislabeled as standard HTTP.
+- **Service Fallback (A4):** When `dst_port` is not in the known service map, `preprocessing/pcap_parser.py` inspects `src_port` as a heuristic fallback. Consequently, port-scan probes originated with `src_port=80` scanning arbitrary destination ports (e.g., dst port 7195) are categorized as HTTP. Retaining this fallback preserves backwards compatibility across all extracted features and trained PAYL profiles without requiring a 16-hour PCAP re-extraction, and is formally documented as a known parsing heuristic.
 - **DNS Protocol Dissection (A5):** Well-formed DNS frames parsed into dedicated Scapy DNS layers are transparent to the raw byte extractor; documented as a protocol-specific parsing boundary.
 
 ---
